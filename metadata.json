@@ -1,0 +1,5 @@
+{
+  "name": "Gemini VPN",
+  "description": "A sleek, conceptual VPN application interface that allows users to select a server location, establish a simulated connection, and view interesting facts about the chosen country powered by the Gemini API.",
+  "requestFramePermissions": []
+}
