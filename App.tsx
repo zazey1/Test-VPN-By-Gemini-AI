@@ -17,6 +17,20 @@ const App: React.FC = () => {
   const [countryInfo, setCountryInfo] = useState<string>('');
   const [isInfoLoading, setIsInfoLoading] = useState<boolean>(false);
   const countryInfoCache = useRef<Record<string, string>>({});
+  const debounceTimer = useRef<number | null>(null);
+
+  // On initial mount, load the cache from sessionStorage to persist across reloads.
+  useEffect(() => {
+    try {
+      const cachedData = sessionStorage.getItem('geminiVpnCache');
+      if (cachedData) {
+        countryInfoCache.current = JSON.parse(cachedData);
+      }
+    } catch (e) {
+      console.error("Could not parse country info cache from sessionStorage", e);
+      sessionStorage.removeItem('geminiVpnCache'); // Clear corrupted cache if parsing fails
+    }
+  }, []); // Runs only once on component mount
 
   useEffect(() => {
     if (connectionStatus === ConnectionStatus.CONNECTED) {
@@ -33,6 +47,11 @@ const App: React.FC = () => {
     if (selectedServer) {
       const countryName = selectedServer.country;
 
+      // Clear previous timer if a new server is selected quickly
+      if (debounceTimer.current) {
+        clearTimeout(debounceTimer.current);
+      }
+
       // Check cache first for an instant response
       if (countryInfoCache.current[countryName]) {
         setCountryInfo(countryInfoCache.current[countryName]);
@@ -40,31 +59,35 @@ const App: React.FC = () => {
         return;
       }
       
-      // If not in cache, show loading state and prepare to fetch
       setIsInfoLoading(true);
       setCountryInfo('');
       
-      const handler = setTimeout(() => {
+      debounceTimer.current = window.setTimeout(() => {
         const fetchAndCacheInfo = async () => {
           try {
             const info = await getCountryInfo(countryName);
-            countryInfoCache.current[countryName] = info; // Cache the result
             setCountryInfo(info);
+            // Update both in-memory and sessionStorage caches
+            countryInfoCache.current[countryName] = info;
+            sessionStorage.setItem('geminiVpnCache', JSON.stringify(countryInfoCache.current));
           } catch (error) {
             console.error(`Error fetching info for ${countryName}:`, error);
             const errorMessage = "Could not retrieve information for this country.";
-            countryInfoCache.current[countryName] = errorMessage; // Also cache errors to prevent retries
             setCountryInfo(errorMessage);
+            // Also cache errors to prevent repeated failed requests
+            countryInfoCache.current[countryName] = errorMessage;
+            sessionStorage.setItem('geminiVpnCache', JSON.stringify(countryInfoCache.current));
           } finally {
             setIsInfoLoading(false);
           }
         };
         fetchAndCacheInfo();
-      }, 500); // 500ms delay to debounce API calls
+      }, 500);
 
-      // Cleanup function to clear the timeout if the user selects another server
       return () => {
-        clearTimeout(handler);
+        if (debounceTimer.current) {
+          clearTimeout(debounceTimer.current);
+        }
       };
     }
   }, [selectedServer]);
